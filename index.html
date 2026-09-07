@@ -16,6 +16,7 @@
       justify-content: center; 
       align-items: center; 
       overflow: hidden; 
+      touch-action: pan-y; /* ป้องกันการซูมหรือดึงหน้าจอผิดพลาด */
     }
     .slide-wrapper {
       position: relative;
@@ -32,6 +33,8 @@
       object-fit: contain;
       border-radius: 8px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      user-select: none;
+      -webkit-user-drag: none;
     }
     .slide.active { display: block; }
     .btn {
@@ -47,6 +50,7 @@
       border-radius: 50%;
       transition: background 0.2s;
       user-select: none;
+      z-index: 10; /* เพิ่ม z-index ให้ปุ่มอยู่ชั้นบนสุดเสมอ */
     }
     .btn:hover { background: rgba(255, 255, 255, 0.5); }
     .prev { left: 20px; }
@@ -63,8 +67,7 @@
 </head>
 <body>
 
-  <div class="slide-wrapper">
-    <!-- ScP1, ScP2, ScP3, ScP4, ScP5, ScP6, ScP7, ScP8, ScP9, ScP10, ScP11, ScP12, ScP13, ScP14, ScP15 -->
+  <div class="slide-wrapper" id="slideWrapper">
     <img class="slide active" src="ScP1.png" alt="Slide 1">
     <img class="slide" src="ScP2.png" alt="Slide 2">
     <img class="slide" src="ScP3.png" alt="Slide 3">
@@ -85,12 +88,13 @@
     <button class="btn next" onclick="changeSlide(1)">&#10095;</button>
   </div>
 
-  <div class="counter" id="slideCounter">1 / 3</div>
+  <div class="counter" id="slideCounter">1 / 15</div>
 
   <script>
     let currentIndex = 0;
     const slides = document.querySelectorAll('.slide');
     const counter = document.getElementById('slideCounter');
+    const slideWrapper = document.getElementById('slideWrapper');
 
     function updateSlide(index) {
       if (index >= slides.length) currentIndex = 0;
@@ -106,11 +110,37 @@
       updateSlide(currentIndex + step);
     }
 
-    // เลื่อนสไลด์ด้วย คีย์บอร์ด (ลูกศร ซ้าย/ขวา และ Spacebar)
+    // คีย์บอร์ด
     document.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);
       if (e.key === 'ArrowLeft') changeSlide(-1);
     });
+
+    // ระบบตรวจจับการปัดนิ้ว (Touch Swipe) สำหรับมือถือ
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    slideWrapper.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, false);
+
+    slideWrapper.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    }, false);
+
+    function handleSwipe() {
+      const minSwipeDistance = 40; // ระยะปัดขั้นต่ำ (px)
+      if (touchEndX < touchStartX - minSwipeDistance) {
+        changeSlide(1);  // ปัดซ้าย -> ไปสไลด์ถัดไป
+      }
+      if (touchEndX > touchStartX + minSwipeDistance) {
+        changeSlide(-1); // ปัดขวา -> ย้อนกลับ
+      }
+    }
+
+    // อัปเดตตัวเลขเริ่มต้นให้ตรงตามจำนวนสไลด์จริง
+    updateSlide(0);
   </script>
 </body>
 </html>
