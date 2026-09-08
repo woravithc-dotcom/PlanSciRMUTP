@@ -1,9 +1,21 @@
+การรองรับการ **ย่อ-ขยาย (Pinch-to-Zoom)** และ **ลากดูรูปภาพ (Pan)** บนมือถือหรือแท็บเล็ต จำเป็นต้องเพิ่มระบบคำนวณการแตะสัมผัสแบบหลายจุด (Multi-touch) เข้าไปครับ
+
+ผมได้อัปเดตโค้ดให้พร้อมใช้งานทันที โดยเพิ่มคุณสมบัติดังนี้:
+
+1. **Pinch-to-Zoom:** ใช้ 2 นิ้ว ถ่าง-หุบ เพื่อย่อ/ขยายรูปภาพ (ขยายได้สูงสุด 4 เท่า)
+2. **Pan / Drag:** เมื่อขยายรูปอยู่ สามารถใช้นิ้วเดียวลากดูรายละเอียดของรูปได้
+3. **Double Tap:** แตะหน้าจอ 2 ครั้งติดกัน เพื่อขยาย/คืนค่าขนาดรูปอย่างรวดเร็ว
+4. **Smart Swipe:** หากรูปขนาดปกติ (ไม่ขยาย) การปัดนิ้วจะเปลี่ยนสไลด์ตามปกติ แต่ถ้าขยายรูปอยู่ การปัดนิ้วจะเป็นการลากดูรูปแทน
+
+### โค้ด HTML + CSS + JS (ฉบับสมบูรณ์)
+
+```html
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SciRMUTP Plan 2570-2573</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Presentation Slideshow</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { 
@@ -16,7 +28,7 @@
       justify-content: center; 
       align-items: center; 
       overflow: hidden; 
-      touch-action: pan-y; /* ป้องกันการซูมหรือดึงหน้าจอผิดพลาด */
+      touch-action: none; /* ป้องกันการเลื่อนหน้าเว็บของเบราว์เซอร์ */
     }
     .slide-wrapper {
       position: relative;
@@ -25,6 +37,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      overflow: hidden; /* ซ่อนส่วนเกินเมื่อขยายรูป */
     }
     .slide {
       display: none;
@@ -35,6 +48,8 @@
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
       user-select: none;
       -webkit-user-drag: none;
+      transform-origin: center center;
+      will-change: transform;
     }
     .slide.active { display: block; }
     .btn {
@@ -50,7 +65,7 @@
       border-radius: 50%;
       transition: background 0.2s;
       user-select: none;
-      z-index: 10; /* เพิ่ม z-index ให้ปุ่มอยู่ชั้นบนสุดเสมอ */
+      z-index: 10;
     }
     .btn:hover { background: rgba(255, 255, 255, 0.5); }
     .prev { left: 20px; }
@@ -62,6 +77,7 @@
       background: rgba(255, 255, 255, 0.1);
       padding: 6px 16px;
       border-radius: 20px;
+      z-index: 10;
     }
   </style>
 </head>
@@ -83,13 +99,12 @@
     <img class="slide" src="ScP13.png" alt="Slide 13">
     <img class="slide" src="ScP14.jpg" alt="Slide 14">
     <img class="slide" src="ScP15.png" alt="Slide 15">
-        <img class="slide" src="U2-Sci.png" alt="Slide 16">
 
     <button class="btn prev" onclick="changeSlide(-1)">&#10094;</button>
     <button class="btn next" onclick="changeSlide(1)">&#10095;</button>
   </div>
 
-  <div class="counter" id="slideCounter">1 / 16</div>
+  <div class="counter" id="slideCounter">1 / 15</div>
 
   <script>
     let currentIndex = 0;
@@ -97,7 +112,32 @@
     const counter = document.getElementById('slideCounter');
     const slideWrapper = document.getElementById('slideWrapper');
 
+    // ตัวแปรสำหรับย่อ-ขยาย และ ลากรูป
+    let scale = 1;
+    let currentX = 0;
+    let currentY = 0;
+    let initialDistance = 0;
+    let startScale = 1;
+    let panStartX = 0;
+    let panStartY = 0;
+    let isPinching = false;
+    let touchStartX = 0;
+    let touchEndX = 0;
+    let lastTap = 0;
+
+    function resetZoom() {
+      scale = 1;
+      currentX = 0;
+      currentY = 0;
+      slides.forEach(s => {
+        s.style.transition = 'transform 0.2s ease-out';
+        s.style.transform = 'none';
+      });
+    }
+
     function updateSlide(index) {
+      resetZoom(); // รีเซ็ตการซูมทุกครั้งที่เปลี่ยนหน้า
+
       if (index >= slides.length) currentIndex = 0;
       else if (index < 0) currentIndex = slides.length - 1;
       else currentIndex = index;
@@ -111,36 +151,107 @@
       updateSlide(currentIndex + step);
     }
 
-    // คีย์บอร์ด
+    // เลื่อนด้วย คีย์บอร์ด
     document.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);
       if (e.key === 'ArrowLeft') changeSlide(-1);
     });
 
-    // ระบบตรวจจับการปัดนิ้ว (Touch Swipe) สำหรับมือถือ
-    let touchStartX = 0;
-    let touchEndX = 0;
+    // คำนวณระยะห่างระหว่าง 2 นิ้ว
+    function getDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
 
+    // Touch Event Handlers
     slideWrapper.addEventListener('touchstart', (e) => {
-      touchStartX = e.changedTouches[0].screenX;
-    }, false);
+      const activeSlide = slides[currentIndex];
+      activeSlide.style.transition = 'none';
+
+      if (e.touches.length === 2) {
+        // เริ่มใช้ 2 นิ้วย่อ-ขยาย
+        isPinching = true;
+        initialDistance = getDistance(e.touches);
+        startScale = scale;
+      } else if (e.touches.length === 1) {
+        isPinching = false;
+        if (scale > 1) {
+          // เริ่มลากรูปเมื่อมีการขยาย
+          panStartX = e.touches[0].clientX - currentX;
+          panStartY = e.touches[0].clientY - currentY;
+        } else {
+          // เก็บพิกัดไว้สำหรับเปลี่ยนสไลด์
+          touchStartX = e.touches[0].clientX;
+        }
+      }
+    }, { passive: false });
+
+    slideWrapper.addEventListener('touchmove', (e) => {
+      const activeSlide = slides[currentIndex];
+
+      if (e.touches.length === 2 && isPinching) {
+        e.preventDefault();
+        const currentDistance = getDistance(e.touches);
+        if (initialDistance > 0) {
+          scale = startScale * (currentDistance / initialDistance);
+          scale = Math.min(Math.max(1, scale), 4); // จำกัดการซูมระหว่าง 1x ถึง 4x
+          activeSlide.style.transform = `translate(${currentX}px, ${currentY}px) scale(${scale})`;
+        }
+      } else if (e.touches.length === 1 && !isPinching && scale > 1) {
+        e.preventDefault();
+        // ลากรูปเมื่อขยายอยู่
+        currentX = e.touches[0].clientX - panStartX;
+        currentY = e.touches[0].clientY - panStartY;
+        activeSlide.style.transform = `translate(${currentX}px, ${currentY}px) scale(${scale})`;
+      }
+    }, { passive: false });
 
     slideWrapper.addEventListener('touchend', (e) => {
-      touchEndX = e.changedTouches[0].screenX;
-      handleSwipe();
-    }, false);
+      const activeSlide = slides[currentIndex];
+      const currentTime = new Date().getTime();
+      const tapLength = currentTime - lastTap;
+
+      if (e.touches.length < 2) {
+        isPinching = false;
+      }
+
+      if (e.touches.length === 0) {
+        // ระบบ Double Tap (แตะ 2 ครั้งติดกันเพื่อย่อ/ขยาย)
+        if (tapLength < 300 && tapLength > 0) {
+          activeSlide.style.transition = 'transform 0.25s ease';
+          if (scale > 1) {
+            resetZoom();
+          } else {
+            scale = 2.5;
+            currentX = 0;
+            currentY = 0;
+            activeSlide.style.transform = `translate(0px, 0px) scale(2.5)`;
+          }
+          lastTap = 0;
+          return;
+        }
+        lastTap = currentTime;
+
+        // คืนค่าหากย่อรูปเล็กกว่าขนาดปกติ
+        if (scale <= 1) {
+          resetZoom();
+          touchEndX = e.changedTouches[0].clientX;
+          handleSwipe();
+        }
+      }
+    });
 
     function handleSwipe() {
-      const minSwipeDistance = 40; // ระยะปัดขั้นต่ำ (px)
+      const minSwipeDistance = 40;
       if (touchEndX < touchStartX - minSwipeDistance) {
-        changeSlide(1);  // ปัดซ้าย -> ไปสไลด์ถัดไป
-      }
-      if (touchEndX > touchStartX + minSwipeDistance) {
+        changeSlide(1);  // ปัดซ้าย -> ไปข้างหน้า
+      } else if (touchEndX > touchStartX + minSwipeDistance) {
         changeSlide(-1); // ปัดขวา -> ย้อนกลับ
       }
     }
 
-    // อัปเดตตัวเลขเริ่มต้นให้ตรงตามจำนวนสไลด์จริง
+    // เริ่มต้นแสดงผล
     updateSlide(0);
   </script>
 </body>
